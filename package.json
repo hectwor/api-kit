@@ -1,0 +1,217 @@
+{
+  "name": "@hectwor/servak",
+  "version": "0.1.0-alpha.0",
+  "description": "Opinionated Express + TypeScript API foundation: standardized responses, error handling, JWT auth middleware, rate limiting, structured logging with correlation IDs, validation, idempotency, and opt-in modules (activity log, parameter catalog, health checks).",
+  "license": "MIT",
+  "author": "Hectwor",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "errors": ["./dist/errors/index.d.ts"],
+      "http": ["./dist/http/index.d.ts"],
+      "logging": ["./dist/logging/index.d.ts"],
+      "middleware": ["./dist/middleware/index.d.ts"],
+      "validation": ["./dist/validation/index.d.ts"],
+      "auth": ["./dist/auth/index.d.ts"],
+      "routes": ["./dist/routes/index.d.ts"],
+      "config": ["./dist/config/index.d.ts"],
+      "app": ["./dist/app/index.d.ts"],
+      "activity-log": ["./dist/modules/activity-log/index.d.ts"],
+      "parameter-catalog": ["./dist/modules/parameter-catalog/index.d.ts"],
+      "health": ["./dist/modules/health/index.d.ts"]
+    }
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./errors": {
+      "import": {
+        "types": "./dist/errors/index.d.mts",
+        "default": "./dist/errors/index.mjs"
+      },
+      "require": {
+        "types": "./dist/errors/index.d.ts",
+        "default": "./dist/errors/index.js"
+      }
+    },
+    "./http": {
+      "import": {
+        "types": "./dist/http/index.d.mts",
+        "default": "./dist/http/index.mjs"
+      },
+      "require": {
+        "types": "./dist/http/index.d.ts",
+        "default": "./dist/http/index.js"
+      }
+    },
+    "./logging": {
+      "import": {
+        "types": "./dist/logging/index.d.mts",
+        "default": "./dist/logging/index.mjs"
+      },
+      "require": {
+        "types": "./dist/logging/index.d.ts",
+        "default": "./dist/logging/index.js"
+      }
+    },
+    "./middleware": {
+      "import": {
+        "types": "./dist/middleware/index.d.mts",
+        "default": "./dist/middleware/index.mjs"
+      },
+      "require": {
+        "types": "./dist/middleware/index.d.ts",
+        "default": "./dist/middleware/index.js"
+      }
+    },
+    "./validation": {
+      "import": {
+        "types": "./dist/validation/index.d.mts",
+        "default": "./dist/validation/index.mjs"
+      },
+      "require": {
+        "types": "./dist/validation/index.d.ts",
+        "default": "./dist/validation/index.js"
+      }
+    },
+    "./auth": {
+      "import": {
+        "types": "./dist/auth/index.d.mts",
+        "default": "./dist/auth/index.mjs"
+      },
+      "require": {
+        "types": "./dist/auth/index.d.ts",
+        "default": "./dist/auth/index.js"
+      }
+    },
+    "./routes": {
+      "import": {
+        "types": "./dist/routes/index.d.mts",
+        "default": "./dist/routes/index.mjs"
+      },
+      "require": {
+        "types": "./dist/routes/index.d.ts",
+        "default": "./dist/routes/index.js"
+      }
+    },
+    "./config": {
+      "import": {
+        "types": "./dist/config/index.d.mts",
+        "default": "./dist/config/index.mjs"
+      },
+      "require": {
+        "types": "./dist/config/index.d.ts",
+        "default": "./dist/config/index.js"
+      }
+    },
+    "./app": {
+      "import": {
+        "types": "./dist/app/index.d.mts",
+        "default": "./dist/app/index.mjs"
+      },
+      "require": {
+        "types": "./dist/app/index.d.ts",
+        "default": "./dist/app/index.js"
+      }
+    },
+    "./activity-log": {
+      "import": {
+        "types": "./dist/modules/activity-log/index.d.mts",
+        "default": "./dist/modules/activity-log/index.mjs"
+      },
+      "require": {
+        "types": "./dist/modules/activity-log/index.d.ts",
+        "default": "./dist/modules/activity-log/index.js"
+      }
+    },
+    "./parameter-catalog": {
+      "import": {
+        "types": "./dist/modules/parameter-catalog/index.d.mts",
+        "default": "./dist/modules/parameter-catalog/index.mjs"
+      },
+      "require": {
+        "types": "./dist/modules/parameter-catalog/index.d.ts",
+        "default": "./dist/modules/parameter-catalog/index.js"
+      }
+    },
+    "./health": {
+      "import": {
+        "types": "./dist/modules/health/index.d.mts",
+        "default": "./dist/modules/health/index.mjs"
+      },
+      "require": {
+        "types": "./dist/modules/health/index.d.ts",
+        "default": "./dist/modules/health/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check-exports": "attw --pack .",
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
+  },
+  "keywords": [
+    "express",
+    "api",
+    "framework",
+    "typescript",
+    "rest",
+    "middleware",
+    "jwt",
+    "rate-limit",
+    "logging",
+    "idempotency"
+  ],
+  "dependencies": {
+    "body-parser": "^1.20.3",
+    "cors": "^2.8.5",
+    "express-rate-limit": "^8.3.2",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "rate-limit-redis": "^5.0.0",
+    "winston": "^3.11.0"
+  },
+  "peerDependencies": {
+    "express": "^4.21.0",
+    "joi": ">=17"
+  },
+  "peerDependenciesMeta": {
+    "joi": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.1",
+    "@types/body-parser": "^1.19.5",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^20.17.0",
+    "@types/supertest": "^6.0.2",
+    "express": "^4.21.2",
+    "joi": "^17.13.3",
+    "supertest": "^7.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.5"
+  }
+}
