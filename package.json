@@ -1,9 +1,9 @@
 {
-  "name": "@hectwor/servak",
+  "name": "@hectordahv/api-kit",
   "version": "0.1.0-alpha.0",
   "description": "Opinionated Express + TypeScript API foundation: standardized responses, error handling, JWT auth middleware, rate limiting, structured logging with correlation IDs, validation, idempotency, and opt-in modules (activity log, parameter catalog, health checks).",
   "license": "MIT",
-  "author": "Hectwor",
+  "author": "hectordahv",
   "type": "commonjs",
   "engines": {
     "node": ">=20"

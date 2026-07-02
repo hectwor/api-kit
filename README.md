@@ -1,4 +1,4 @@
-# @hectwor/servak
+# @hectordahv/api-kit
 
 Opinionated Express + TypeScript API foundation. Extracted from a production backend: standardized response envelope, global error handling, JWT auth middleware, distributed rate limiting, structured logging with correlation IDs, Joi validation, idempotency, and opt-in modules (activity log, parameter catalog, health checks).
 
@@ -9,7 +9,7 @@ Opinionated Express + TypeScript API foundation. Extracted from a production bac
 ## Install
 
 ```bash
-npm install @hectwor/servak express
+npm install @hectordahv/api-kit express
 # optional, only if you use validateSchema:
 npm install joi
 ```
@@ -17,9 +17,9 @@ npm install joi
 ## Quickstart
 
 ```ts
-import { createApiKit, messagesEs } from "@hectwor/servak";
-import { createApp, finalizeApp } from "@hectwor/servak/app";
-import { createHealthRoutes } from "@hectwor/servak/health";
+import { createApiKit, messagesEs } from "@hectordahv/api-kit";
+import { createApp, finalizeApp } from "@hectordahv/api-kit/app";
+import { createHealthRoutes } from "@hectordahv/api-kit/health";
 
 const kit = createApiKit({
   service: "my-api",
@@ -71,7 +71,7 @@ Every response uses the same envelope:
 
 | Subpath | Contents |
 |---|---|
-| `@hectwor/servak` | `createApiKit` kernel + re-exports of everything below except `/app` and the opt-in modules |
+| `@hectordahv/api-kit` | `createApiKit` kernel + re-exports of everything below except `/app` and the opt-in modules |
 | `/errors` | `BusinessError` base + `NotFoundError`, `ConflictError`, `UnauthorizedError`, `ForbiddenError`, `UnprocessableError`, auth/resource error families |
 | `/http` | `ResponseBuilder`, `HTTP_STATUS`, `ERROR_CODES`/`SUCCESS_CODES`, message catalogs (`messagesEn`, `messagesEs`), pagination helpers |
 | `/logging` | `createLogger` (Winston, correlation IDs via AsyncLocalStorage), `createRequestLogging` |
@@ -101,7 +101,7 @@ Messages are merged over the English defaults, so you can override a single key 
 
 ```ts
 // Redis (any ioredis-compatible client) — never a hard dependency:
-import { createRedisRateLimitStore, redisKeyValueStore, idempotencyMiddleware } from "@hectwor/servak/middleware";
+import { createRedisRateLimitStore, redisKeyValueStore, idempotencyMiddleware } from "@hectordahv/api-kit/middleware";
 const rateLimitStore = createRedisRateLimitStore(redis);
 const idem = idempotencyMiddleware(redisKeyValueStore(redis));
 
@@ -112,7 +112,7 @@ const kit = createApiKit({ service: "x", capture: { exception: Sentry.captureExc
 ### Opt-in modules own logic, you own persistence
 
 ```ts
-import { ActivityLogService, createActivityLogger, createActivityLogMiddleware } from "@hectwor/servak/activity-log";
+import { ActivityLogService, createActivityLogger, createActivityLogMiddleware } from "@hectordahv/api-kit/activity-log";
 
 class MyActivityLogRepository implements ActivityLogRepository { /* your ORM here */ }
 
@@ -128,7 +128,7 @@ const { app, apiRouter } = createApp({ kit, beforeRoutes: [audit] });
 ```
 
 ```ts
-import { ParameterCatalogService, nodeValuesToObject } from "@hectwor/servak/parameter-catalog";
+import { ParameterCatalogService, nodeValuesToObject } from "@hectordahv/api-kit/parameter-catalog";
 
 class MyCatalog extends ParameterCatalogService {
   async getFeatureFlags() {
@@ -143,7 +143,7 @@ class MyCatalog extends ParameterCatalogService {
 `createApp` wires helmet, CORS, client identity-header stripping (`userId` can only come from a verified JWT), a global IP rate limiter, and input sanitization. Per-route you add:
 
 ```ts
-import { makeUserLimiter } from "@hectwor/servak/middleware";
+import { makeUserLimiter } from "@hectordahv/api-kit/middleware";
 const loginLimiter = makeUserLimiter({ name: "login", windowMs: 15 * 60 * 1000, max: 10, store: rateLimitStore });
 ```
 
