@@ -1,4 +1,5 @@
 import type { BaseEntity, CrudRepository, ModelDelegate, PageResult, RowMapper } from "./crud.types";
+import type { ListQuery } from "./list-query";
 
 export interface SoftDeleteRepositoryConfig<E extends BaseEntity, Row = Record<string, unknown>> {
   /** Prisma-like model delegate (e.g. `prisma.user_banks`). */
@@ -21,6 +22,14 @@ export interface SoftDeleteRepositoryConfig<E extends BaseEntity, Row = Record<s
   maxFindAll?: number;
   /** Default `orderBy` for paginated queries (schema-specific). */
   defaultOrderBy?: unknown;
+  /**
+   * Maps `ListQuery` filter/sort field names → row columns. Fields absent from
+   * the map fall back to their own name. Only allow-listed fields ever reach
+   * here (see `parseListQuery`), so this is just the domain→column rename.
+   */
+  columnMap?: Record<string, string>;
+  /** Columns a `ListQuery.search` term is matched against (case-insensitive contains). */
+  searchColumns?: string[];
 }
 
 /**
@@ -42,6 +51,8 @@ export class SoftDeleteUserScopedRepository<E extends BaseEntity, Row = Record<s
   protected readonly hardDelete: boolean;
   protected readonly maxFindAll: number;
   protected readonly defaultOrderBy: unknown;
+  protected readonly columnMap: Record<string, string>;
+  protected readonly searchColumns: string[];
 
   constructor(config: SoftDeleteRepositoryConfig<E, Row>) {
     this.delegate = config.delegate;
@@ -54,11 +65,35 @@ export class SoftDeleteUserScopedRepository<E extends BaseEntity, Row = Record<s
     this.hardDelete = config.hardDelete ?? false;
     this.maxFindAll = config.maxFindAll ?? 5000;
     this.defaultOrderBy = config.defaultOrderBy;
+    this.columnMap = config.columnMap ?? {};
+    this.searchColumns = config.searchColumns ?? [];
   }
 
   /** `where` clause restricted to live rows. */
   protected activeWhere(extra: Record<string, unknown> = {}): Record<string, unknown> {
     return { [this.softDeleteField]: this.activeValue, ...extra };
+  }
+
+  protected column(field: string): string {
+    return this.columnMap[field] ?? field;
+  }
+
+  /** Build a Prisma-style `where` for a user's live rows plus any ListQuery filters/search. */
+  protected buildWhere(userId: string, query?: ListQuery): Record<string, unknown> {
+    const where = this.activeWhere({ [this.userField]: userId });
+    for (const [field, value] of Object.entries(query?.filters ?? {})) {
+      where[this.column(field)] = value;
+    }
+    if (query?.search && this.searchColumns.length > 0) {
+      where.OR = this.searchColumns.map((col) => ({ [col]: { contains: query.search, mode: "insensitive" } }));
+    }
+    return where;
+  }
+
+  /** Build a Prisma-style `orderBy` from a ListQuery sort, falling back to the default. */
+  protected buildOrderBy(query?: ListQuery): unknown {
+    if (query?.sort) return { [this.column(query.sort.field)]: query.sort.dir };
+    return this.defaultOrderBy;
   }
 
   async findById(id: string): Promise<E | null> {
@@ -78,13 +113,18 @@ export class SoftDeleteUserScopedRepository<E extends BaseEntity, Row = Record<s
     return rows.map((row) => this.mapper.toDomain(row));
   }
 
-  async findAllByUserId(userId: string): Promise<E[]> {
-    const rows = await this.delegate.findMany({ where: this.activeWhere({ [this.userField]: userId }) });
+  async findAllByUserId(userId: string, query?: ListQuery): Promise<E[]> {
+    const orderBy = this.buildOrderBy(query);
+    const rows = await this.delegate.findMany({
+      where: this.buildWhere(userId, query),
+      ...(orderBy !== undefined && { orderBy }),
+    });
     return rows.map((row) => this.mapper.toDomain(row));
   }
 
-  async findPaginatedByUserId(userId: string, page: number, limit: number): Promise<PageResult<E>> {
-    const where = this.activeWhere({ [this.userField]: userId });
+  async findPaginatedByUserId(userId: string, page: number, limit: number, query?: ListQuery): Promise<PageResult<E>> {
+    const where = this.buildWhere(userId, query);
+    const orderBy = this.buildOrderBy(query);
     const safePage = page >= 1 ? page : 1;
     const safeLimit = limit >= 1 ? limit : 20;
     const [rows, total] = await Promise.all([
@@ -92,7 +132,7 @@ export class SoftDeleteUserScopedRepository<E extends BaseEntity, Row = Record<s
         where,
         take: safeLimit,
         skip: (safePage - 1) * safeLimit,
-        ...(this.defaultOrderBy !== undefined && { orderBy: this.defaultOrderBy }),
+        ...(orderBy !== undefined && { orderBy }),
       }),
       this.delegate.count({ where }),
     ]);

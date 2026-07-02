@@ -109,6 +109,8 @@ Every response uses the same envelope:
 | `/crud` | Opt-in generic CRUD vertical: `SoftDeleteUserScopedRepository`, `CrudService`, `createCrudController`, `registerCrudRoutes` — a user-scoped, soft-delete REST resource in ~30 lines |
 | `/server` | `createHttpServer` (graceful shutdown: drain, cleanup callbacks, force-exit timeout) + `runStartupTasks` (uniform logging + fatal/non-fatal policy) |
 | `/openapi` | Live OpenAPI 3.0 + Swagger UI generated from your Joi schemas and routes — `OpenApiRegistry`, `joiToOpenApi`, `documentCrudResource`, `collectExpressRoutes`, `createOpenApiRoutes`. No hand-edited JSON |
+| `/testing` | Test helpers for apps built on the kit: `createTestKit`, `silentLogger`/`spyLogger`, `issueUserToken`/`bearer`, `InMemoryCrudRepository`, `createMemoryDelegate` |
+| `/container` | Tiny typed DI container: `createContainer().register(token, provider).resolve(token)` — lazy singletons, transients, circular-dependency detection, full inference |
 | `/activity-log` | Opt-in audit trail: middleware factory + fire-and-forget logger + service over your repository |
 | `/parameter-catalog` | Opt-in runtime config catalog (groups → nodes → typed values) with TTL cache; extensible by subclass |
 | `/health` | `createHealthRoutes` with named readiness checks |
@@ -205,6 +207,21 @@ registerCrudRoutes(apiRouter, {
 
 - **User-scoped by default** — operations without a `userId` return empty/null instead of leaking cross-tenant rows; ownership is verified before update/delete.
 - **Soft-delete by default** — `remove()` flips `status` to `deleted`; pass `hardDelete: true` to actually delete.
+- **Filtering, sorting & search** — allow-listed, so query params can't reach arbitrary columns:
+
+```ts
+createCrudController<Bank>({
+  resource: "Bank", service, responses: kit.responses, requireUserId: kit.requireUserId,
+  listQuery: { allowedFilters: ["currency"], allowedSort: ["name", "createdAt"], searchParam: "q" },
+});
+new SoftDeleteUserScopedRepository<Bank>({
+  delegate: prisma.user_banks, mapper,
+  columnMap: { name: "name", currency: "currency_code" }, // domain field → column
+  searchColumns: ["name"],                                  // case-insensitive contains
+});
+// GET /api/v1/banks?currency=USD&sort=name:desc&q=cred&page=1&limit=20
+```
+
 - **Override anything** — extend `CrudService`/`SoftDeleteUserScopedRepository` for domain rules, or use `only`/`validate`/`toDTO` to shape the surface.
 
 ### Boot & graceful shutdown
@@ -280,6 +297,58 @@ const rotated = tokens.refresh(oldRefreshToken);           // verifies + mints a
 No database or rotation bookkeeping: `refresh()` verifies the refresh JWT and re-issues,
 preserving the original `remember` choice. Claim shape is configurable (`idClaim`,
 `extractUserId`) and supports the legacy `{ user: { _id } }` payload by default.
+
+### Typed DI container
+
+```ts
+import { createContainer } from "@hectordahv/api-kit/container";
+
+const container = createContainer()
+  .value("prisma", prisma)
+  .register("bankRepo", (c) => new SoftDeleteUserScopedRepository({ delegate: c.resolve("prisma").user_banks, mapper }))
+  .register("bankService", (c) => new CrudService(c.resolve("bankRepo")));
+
+container.resolve("bankService"); // fully typed, memoized singleton
+```
+
+Replaces the hand-written service factory: lazy singletons (or `{ singleton: false }` transients),
+circular-dependency detection, `reset()` for tests. No decorators or reflect-metadata.
+
+### Non-CRUD routes document themselves
+
+Any route using `kit.validateSchema(schema)` is auto-documented: `createOpenApiRoutes({ introspect: app })`
+reads the schema tagged on the middleware and emits the request body — no `documentCrudResource`
+call needed for one-off routes.
+
+```ts
+app.post("/auth/login", kit.validateSchema(LoginSchema), controller.login);
+// → POST /auth/login appears in /openapi.json with LoginSchema as its request body
+```
+
+### Cursor pagination
+
+```ts
+import { parseCursor, cursorData } from "@hectordahv/api-kit/http";
+
+const { limit, cursor } = parseCursor(req.query);          // keyset params
+const rows = await repo.pageAfter(cursor, limit + 1);      // fetch one extra
+const page = cursorData(rows, limit, (r) => r.id);         // → { items, pagination:{ nextCursor, hasMore } }
+```
+
+### Testing apps built on the kit
+
+```ts
+import { createTestKit, InMemoryCrudRepository, issueUserToken, bearer } from "@hectordahv/api-kit/testing";
+
+const kit = createTestKit();                                   // silent logger, service: "test"
+const repo = new InMemoryCrudRepository<Bank>([], { searchFields: ["name"] }); // no DB
+// ...build controller/routes with kit + repo, then drive it with supertest:
+await request(app).get("/api/v1/banks").set(bearer(issueUserToken("u1")));
+```
+
+`createMemoryDelegate()` gives an in-memory `ModelDelegate` (supports filters/search/sort) to
+test a real `SoftDeleteUserScopedRepository` without a database. `spyLogger()` captures log calls
+for assertions.
 
 ### Security defaults
 

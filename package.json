@@ -1,6 +1,6 @@
 {
   "name": "@hectordahv/api-kit",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "Opinionated Express + TypeScript API foundation and scaffolder. Standardized response envelope, error handling, JWT auth + stateless refresh tokens, rate limiting, structured logging with correlation IDs, Joi validation, idempotency, graceful shutdown, a generic user-scoped soft-delete CRUD vertical, live auto-generated OpenAPI/Swagger from your Joi schemas, and opt-in modules (activity log, parameter catalog, health checks). Includes a `new` CLI to scaffold a runnable backend.",
   "license": "MIT",
   "author": "hectordahv",
@@ -58,11 +58,17 @@
       "crud": [
         "./dist/crud/index.d.ts"
       ],
+      "container": [
+        "./dist/container/index.d.ts"
+      ],
       "server": [
         "./dist/server/index.d.ts"
       ],
       "openapi": [
         "./dist/openapi/index.d.ts"
+      ],
+      "testing": [
+        "./dist/testing/index.d.ts"
       ],
       "activity-log": [
         "./dist/modules/activity-log/index.d.ts"
@@ -186,6 +192,16 @@
         "default": "./dist/crud/index.js"
       }
     },
+    "./container": {
+      "import": {
+        "types": "./dist/container/index.d.mts",
+        "default": "./dist/container/index.mjs"
+      },
+      "require": {
+        "types": "./dist/container/index.d.ts",
+        "default": "./dist/container/index.js"
+      }
+    },
     "./server": {
       "import": {
         "types": "./dist/server/index.d.mts",
@@ -204,6 +220,16 @@
       "require": {
         "types": "./dist/openapi/index.d.ts",
         "default": "./dist/openapi/index.js"
+      }
+    },
+    "./testing": {
+      "import": {
+        "types": "./dist/testing/index.d.mts",
+        "default": "./dist/testing/index.mjs"
+      },
+      "require": {
+        "types": "./dist/testing/index.d.ts",
+        "default": "./dist/testing/index.js"
       }
     },
     "./activity-log": {
@@ -242,6 +268,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "coverage": "vitest run --coverage",
     "check-exports": "attw --pack .",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build"
   },
@@ -291,6 +318,7 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^20.17.0",
     "@types/supertest": "^6.0.2",
+    "@vitest/coverage-v8": "^3.2.6",
     "express": "^4.21.2",
     "joi": "^17.13.3",
     "supertest": "^7.0.0",

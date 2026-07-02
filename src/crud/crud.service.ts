@@ -1,4 +1,5 @@
 import type { BaseEntity, CrudRepository, PageResult } from "./crud.types";
+import type { ListQuery } from "./list-query";
 
 export interface CrudServiceOptions {
   /** Value written to the soft-delete field on create. Default: `"active"`. */
@@ -31,10 +32,10 @@ export class CrudService<E extends BaseEntity> {
     });
   }
 
-  /** All live rows for a user. No `userId` → `[]` (never leak all tenants). */
-  async all(userId?: string): Promise<E[]> {
+  /** All live rows for a user, optionally filtered/sorted. No `userId` → `[]`. */
+  async all(userId?: string, query?: ListQuery): Promise<E[]> {
     if (!userId) return [];
-    return this.repository.findAllByUserId(userId);
+    return this.repository.findAllByUserId(userId, query);
   }
 
   /** Single row scoped to its owner. No `userId` → `null`. */
@@ -63,9 +64,9 @@ export class CrudService<E extends BaseEntity> {
     return true;
   }
 
-  /** Paginated page for a user. No `userId` → empty page. */
-  async paginated(userId: string | undefined, page: number, limit: number): Promise<PageResult<E>> {
+  /** Paginated page for a user, optionally filtered/sorted. No `userId` → empty page. */
+  async paginated(userId: string | undefined, page: number, limit: number, query?: ListQuery): Promise<PageResult<E>> {
     if (!userId) return { items: [], total: 0 };
-    return this.repository.findPaginatedByUserId(userId, page, limit);
+    return this.repository.findPaginatedByUserId(userId, page, limit, query);
   }
 }

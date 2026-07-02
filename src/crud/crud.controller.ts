@@ -7,6 +7,7 @@ import { paginatedData, parsePagination, type ParsePaginationOptions } from "../
 
 import type { CrudService } from "./crud.service";
 import type { BaseEntity, EntityToDTO } from "./crud.types";
+import { parseListQuery, type ParseListQueryOptions } from "./list-query";
 
 export interface CrudControllerConfig<E extends BaseEntity, DTO = E> {
   /** Human name used only in the 404 error message (e.g. `"Bank"`). */
@@ -22,6 +23,11 @@ export interface CrudControllerConfig<E extends BaseEntity, DTO = E> {
   idParam?: string;
   /** Pagination bounds for the `paginated` handler. */
   pagination?: ParsePaginationOptions;
+  /**
+   * Filtering/sorting/search allow-list for `list` and `paginated`. When omitted,
+   * query params are ignored (all rows returned). Only listed fields are honoured.
+   */
+  listQuery?: ParseListQueryOptions;
 }
 
 export interface CrudController {
@@ -52,6 +58,8 @@ export function createCrudController<E extends BaseEntity, DTO = E>(
   const idParam = config.idParam ?? "id";
   const project = (entity: E): DTO | E => (config.toDTO ? config.toDTO(entity) : entity);
   const text = (key: string): string => responses.messages[key] ?? key;
+  const listQuery = (req: express.Request) =>
+    config.listQuery ? parseListQuery(req.query as Record<string, unknown>, config.listQuery) : undefined;
   const notFound = (res: express.Response) =>
     responses.sendError(res, ERROR_CODES.NOT_FOUND, `${resource} not found or does not belong to user`, 404);
 
@@ -59,7 +67,7 @@ export function createCrudController<E extends BaseEntity, DTO = E>(
     list: async (req, res) => {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      const items = await service.all(userId);
+      const items = await service.all(userId, listQuery(req));
       responses.sendSuccess(res, items.map(project), SUCCESS_CODES.LISTED, text("LISTED"), 200);
     },
 
@@ -67,7 +75,7 @@ export function createCrudController<E extends BaseEntity, DTO = E>(
       const userId = requireUserId(req, res);
       if (!userId) return;
       const { page, limit } = parsePagination(req.query as Record<string, unknown>, config.pagination);
-      const { items, total } = await service.paginated(userId, page, limit);
+      const { items, total } = await service.paginated(userId, page, limit, listQuery(req));
       const payload = paginatedData(items.map(project), page, limit, total);
       responses.sendSuccess(res, payload, SUCCESS_CODES.LISTED, text("LISTED"), 200);
     },

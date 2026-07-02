@@ -5,10 +5,16 @@ import type { HttpMethod } from "./registry";
 export interface DiscoveredRoute {
   method: HttpMethod;
   path: string;
+  /** Middleware/handler functions registered on this route (for schema-tag lookup). */
+  handlers: Array<(...args: unknown[]) => unknown>;
+}
+
+interface RouteSubLayer {
+  handle?: (...args: unknown[]) => unknown;
 }
 
 interface Layer {
-  route?: { path: string | string[]; methods: Record<string, boolean> };
+  route?: { path: string | string[]; methods: Record<string, boolean>; stack?: RouteSubLayer[] };
   name?: string;
   handle?: { stack?: Layer[] };
   regexp?: RegExp;
@@ -34,9 +40,10 @@ function collect(stack: Layer[], base: string, out: DiscoveredRoute[]): void {
   for (const layer of stack) {
     if (layer.route) {
       const paths = Array.isArray(layer.route.path) ? layer.route.path : [layer.route.path];
+      const handlers = (layer.route.stack ?? []).map((s) => s.handle).filter((h): h is (...a: unknown[]) => unknown => typeof h === "function");
       for (const p of paths) {
         for (const method of METHODS) {
-          if (layer.route.methods[method]) out.push({ method, path: base + p });
+          if (layer.route.methods[method]) out.push({ method, path: base + p, handlers });
         }
       }
     } else if (layer.name === "router" && layer.handle?.stack) {

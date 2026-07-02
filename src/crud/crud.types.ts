@@ -7,6 +7,8 @@
  * as it satisfies the same shape.
  */
 
+import type { ListQuery } from "./list-query";
+
 /**
  * Fields every CRUD entity is expected to carry. All optional so domain
  * entities can extend it freely; the base service/repository only rely on
@@ -70,8 +72,8 @@ export interface CrudRepository<E extends BaseEntity> {
   findById(id: string): Promise<E | null>;
   findByIdAndUserId(id: string, userId: string): Promise<E | null>;
   findAll(limit?: number): Promise<E[]>;
-  findAllByUserId(userId: string): Promise<E[]>;
-  findPaginatedByUserId(userId: string, page: number, limit: number): Promise<PageResult<E>>;
+  findAllByUserId(userId: string, query?: ListQuery): Promise<E[]>;
+  findPaginatedByUserId(userId: string, page: number, limit: number, query?: ListQuery): Promise<PageResult<E>>;
   create(entity: E): Promise<E>;
   update(id: string, entity: Partial<E>): Promise<E | null>;
   /** Removes the row. Soft-delete implementations flip the status field. */

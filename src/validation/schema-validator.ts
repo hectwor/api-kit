@@ -8,6 +8,12 @@ import { HTTP_STATUS } from "../http/status";
 
 export type SchemaValidator = (schema: Joi.ObjectSchema) => express.RequestHandler;
 
+/** Property key under which a validation middleware stores its Joi schema. */
+export const SCHEMA_TAG = "__apiKitSchema" as const;
+
+/** A request handler carrying the Joi schema it validates (for OpenAPI introspection). */
+export type SchemaTaggedHandler = express.RequestHandler & { [SCHEMA_TAG]?: Joi.ObjectSchema };
+
 export interface SchemaValidatorOptions {
   responses: ResponseBuilder;
   /** Catalog used for the error text prefix (key VALIDATION_ERROR_PREFIX). Default: ResponseBuilder's catalog. */
@@ -29,7 +35,7 @@ export function createSchemaValidator(options: SchemaValidatorOptions): SchemaVa
   const prefix = messages.VALIDATION_ERROR_PREFIX ?? "Validation error";
 
   return (schema: Joi.ObjectSchema) => {
-    return (req, res, next) => {
+    const handler: SchemaTaggedHandler = (req, res, next) => {
       const { error, value } = schema.validate(req.body, { abortEarly: false });
 
       if (error) {
@@ -40,5 +46,9 @@ export function createSchemaValidator(options: SchemaValidatorOptions): SchemaVa
       req.body = value;
       next();
     };
+    // Tag the middleware so the OpenAPI layer can auto-document the request body
+    // of any route that uses it (see collectExpressRoutes / createOpenApiRoutes).
+    handler[SCHEMA_TAG] = schema;
+    return handler;
   };
 }

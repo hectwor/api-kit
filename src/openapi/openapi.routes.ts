@@ -1,7 +1,19 @@
 import type express from "express";
 
+import { SCHEMA_TAG } from "../validation/schema-validator";
+
 import { collectExpressRoutes } from "./express-introspect";
+import { isJoiLike, joiToOpenApi, type JoiLike } from "./joi-to-openapi";
 import { OpenApiRegistry } from "./registry";
+
+/** Find the Joi schema tagged onto a validateSchema middleware in a route's handler chain. */
+function findTaggedSchema(handlers: Array<(...args: unknown[]) => unknown>): JoiLike | undefined {
+  for (const handler of handlers) {
+    const schema = (handler as unknown as Record<string, unknown>)[SCHEMA_TAG];
+    if (isJoiLike(schema)) return schema;
+  }
+  return undefined;
+}
 
 export interface OpenApiRoutesOptions {
   registry: OpenApiRegistry;
@@ -59,10 +71,16 @@ export function createOpenApiRoutes(app: express.IRouter, options: OpenApiRoutes
       for (const route of collectExpressRoutes(options.introspect)) {
         if (ignore.some((p) => route.path === p || route.path.startsWith(p))) continue;
         if (registry.hasPath(route.method, route.path)) continue;
+
+        // Auto-derive the request body from a validateSchema-tagged handler.
+        const bodyMethod = route.method === "post" || route.method === "put" || route.method === "patch";
+        const tagged = bodyMethod ? findTaggedSchema(route.handlers) : undefined;
+
         registry.addPath({
           method: route.method,
           path: route.path,
           tags: ["(undocumented)"],
+          ...(tagged && { requestBody: joiToOpenApi(tagged) }),
           responses: { "200": { description: "OK" } },
         });
       }
