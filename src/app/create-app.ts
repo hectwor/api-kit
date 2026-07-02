@@ -1,6 +1,5 @@
 import { randomBytes } from "crypto";
 
-import * as bodyparser from "body-parser";
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
@@ -30,7 +29,7 @@ export interface CreateAppOptions {
   globalRateLimit?: { windowMs?: number; max?: number } | false;
   /** Distributed store for the global limiter (see `createRedisRateLimitStore`). */
   rateLimitStore?: RateLimitStore;
-  /** body-parser JSON limit, e.g. "1mb". */
+  /** JSON body size limit passed to express.json, e.g. "1mb". */
   bodyLimit?: string;
   /** Express `trust proxy` setting (needed behind load balancers for correct req.ip). */
   trustProxy?: boolean | number | string;
@@ -100,7 +99,7 @@ export function createApp(options: CreateAppOptions): CreatedApp {
     );
   }
 
-  app.use(bodyparser.json(options.bodyLimit ? { limit: options.bodyLimit } : {}));
+  app.use(express.json(options.bodyLimit ? { limit: options.bodyLimit } : {}));
 
   if (options.sanitization !== false) {
     app.use(kit.sanitization);

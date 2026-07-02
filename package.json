@@ -1,32 +1,78 @@
 {
   "name": "@hectordahv/api-kit",
-  "version": "0.1.0-alpha.0",
-  "description": "Opinionated Express + TypeScript API foundation: standardized responses, error handling, JWT auth middleware, rate limiting, structured logging with correlation IDs, validation, idempotency, and opt-in modules (activity log, parameter catalog, health checks).",
+  "version": "0.1.0-alpha.1",
+  "description": "Opinionated Express + TypeScript API foundation and scaffolder. Standardized response envelope, error handling, JWT auth + stateless refresh tokens, rate limiting, structured logging with correlation IDs, Joi validation, idempotency, graceful shutdown, a generic user-scoped soft-delete CRUD vertical, live auto-generated OpenAPI/Swagger from your Joi schemas, and opt-in modules (activity log, parameter catalog, health checks). Includes a `new` CLI to scaffold a runnable backend.",
   "license": "MIT",
   "author": "hectordahv",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hectwor/api-kit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hectwor/api-kit/issues"
+  },
+  "homepage": "https://github.com/hectwor/api-kit#readme",
   "type": "commonjs",
+  "sideEffects": false,
   "engines": {
     "node": ">=20"
   },
   "files": [
-    "dist"
+    "dist",
+    "bin"
   ],
+  "bin": {
+    "api-kit": "bin/cli.js"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "typesVersions": {
     "*": {
-      "errors": ["./dist/errors/index.d.ts"],
-      "http": ["./dist/http/index.d.ts"],
-      "logging": ["./dist/logging/index.d.ts"],
-      "middleware": ["./dist/middleware/index.d.ts"],
-      "validation": ["./dist/validation/index.d.ts"],
-      "auth": ["./dist/auth/index.d.ts"],
-      "routes": ["./dist/routes/index.d.ts"],
-      "config": ["./dist/config/index.d.ts"],
-      "app": ["./dist/app/index.d.ts"],
-      "activity-log": ["./dist/modules/activity-log/index.d.ts"],
-      "parameter-catalog": ["./dist/modules/parameter-catalog/index.d.ts"],
-      "health": ["./dist/modules/health/index.d.ts"]
+      "errors": [
+        "./dist/errors/index.d.ts"
+      ],
+      "http": [
+        "./dist/http/index.d.ts"
+      ],
+      "logging": [
+        "./dist/logging/index.d.ts"
+      ],
+      "middleware": [
+        "./dist/middleware/index.d.ts"
+      ],
+      "validation": [
+        "./dist/validation/index.d.ts"
+      ],
+      "auth": [
+        "./dist/auth/index.d.ts"
+      ],
+      "routes": [
+        "./dist/routes/index.d.ts"
+      ],
+      "config": [
+        "./dist/config/index.d.ts"
+      ],
+      "app": [
+        "./dist/app/index.d.ts"
+      ],
+      "crud": [
+        "./dist/crud/index.d.ts"
+      ],
+      "server": [
+        "./dist/server/index.d.ts"
+      ],
+      "openapi": [
+        "./dist/openapi/index.d.ts"
+      ],
+      "activity-log": [
+        "./dist/modules/activity-log/index.d.ts"
+      ],
+      "parameter-catalog": [
+        "./dist/modules/parameter-catalog/index.d.ts"
+      ],
+      "health": [
+        "./dist/modules/health/index.d.ts"
+      ]
     }
   },
   "exports": {
@@ -130,6 +176,36 @@
         "default": "./dist/app/index.js"
       }
     },
+    "./crud": {
+      "import": {
+        "types": "./dist/crud/index.d.mts",
+        "default": "./dist/crud/index.mjs"
+      },
+      "require": {
+        "types": "./dist/crud/index.d.ts",
+        "default": "./dist/crud/index.js"
+      }
+    },
+    "./server": {
+      "import": {
+        "types": "./dist/server/index.d.mts",
+        "default": "./dist/server/index.mjs"
+      },
+      "require": {
+        "types": "./dist/server/index.d.ts",
+        "default": "./dist/server/index.js"
+      }
+    },
+    "./openapi": {
+      "import": {
+        "types": "./dist/openapi/index.d.mts",
+        "default": "./dist/openapi/index.mjs"
+      },
+      "require": {
+        "types": "./dist/openapi/index.d.ts",
+        "default": "./dist/openapi/index.js"
+      }
+    },
     "./activity-log": {
       "import": {
         "types": "./dist/modules/activity-log/index.d.mts",
@@ -177,12 +253,21 @@
     "rest",
     "middleware",
     "jwt",
+    "refresh-token",
     "rate-limit",
     "logging",
-    "idempotency"
+    "idempotency",
+    "crud",
+    "openapi",
+    "swagger",
+    "joi",
+    "validation",
+    "graceful-shutdown",
+    "scaffold",
+    "boilerplate",
+    "starter"
   ],
   "dependencies": {
-    "body-parser": "^1.20.3",
     "cors": "^2.8.5",
     "express-rate-limit": "^8.3.2",
     "helmet": "^8.1.0",
@@ -201,7 +286,6 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.1",
-    "@types/body-parser": "^1.19.5",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.7",

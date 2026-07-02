@@ -1,0 +1,47 @@
+name: Publish
+
+# Publishes to npm with build provenance (Sigstore) when a version tag is pushed.
+# Prerequisites:
+#   - A repository secret NPM_TOKEN (npm automation token) OR use OIDC trusted publishing.
+#   - Tag the release: `npm version <patch|prerelease> && git push --follow-tags`.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write # required for npm provenance (OIDC)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: "https://registry.npmjs.org"
+
+      - run: npm ci
+
+      # prepublishOnly already runs typecheck + test + build, but run them
+      # explicitly so a failure is a distinct, visible step.
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build
+      - run: npm run check-exports
+
+      # --provenance publishes a signed attestation linking the artifact to this
+      # workflow run and commit. Requires npm >= 9.5 (bundled with Node 20).
+      - name: Publish (public, with provenance)
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            npm publish --provenance --access public --tag next
+          else
+            npm publish --provenance --access public
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

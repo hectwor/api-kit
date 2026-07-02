@@ -1,12 +1,37 @@
 # @hectordahv/api-kit
 
-Opinionated Express + TypeScript API foundation. Extracted from a production backend: standardized response envelope, global error handling, JWT auth middleware, distributed rate limiting, structured logging with correlation IDs, Joi validation, idempotency, and opt-in modules (activity log, parameter catalog, health checks).
+Opinionated Express + TypeScript API foundation **and scaffolder**, extracted from a production backend. Everything a standardized REST service needs, wired once and reused across apps.
 
+**Foundation**
+- **Standardized responses** — one `{ message, data|error, metadata }` envelope on every route, via `ResponseBuilder`.
+- **Error handling** — `BusinessError` taxonomy + global middleware mapping Business/Joi/Prisma errors to the envelope.
+- **Auth** — JWT verify middleware with an injectable claim extractor, plus `TokenPairService` for stateless access/refresh issuing and rotation.
+- **Structured logging** — Winston with request-scoped correlation IDs (AsyncLocalStorage).
+- **Validation** — Joi body-validation middleware.
+- **Rate limiting & idempotency** — IP + per-user limiters (optional Redis store) and idempotent replay via a `KeyValueStore`.
+- **App bootstrap** — `createApp`/`finalizeApp` assemble the standard middleware stack (helmet, CORS, identity-header stripping, sanitization) in one call.
+- **Graceful shutdown & startup tasks** — `createHttpServer` (drain → cleanup → exit) and `runStartupTasks`.
+
+**Productivity**
+- **Generic CRUD vertical** — a user-scoped, soft-delete REST resource (repository → service → controller → routes) in ~30 lines, ORM-agnostic.
+- **Live OpenAPI + Swagger UI** — generated from the same Joi schemas you validate with and the live route table; no hand-edited JSON.
+- **Opt-in modules** — activity log (audit trail), parameter catalog (runtime config), health checks.
+- **Scaffolder** — `npx @hectordahv/api-kit new <dir>` generates a runnable starter.
+
+**Principles**
 - **No global state** — create one `ApiKit` per app; several can coexist in one process.
-- **No ORM/vendor lock-in** — Prisma error codes are matched structurally, Redis and Sentry are injected behind tiny interfaces, persistence for the opt-in modules is a repository interface your app implements.
-- **CJS + ESM**, Node >= 20, Express 4.
+- **No ORM/vendor lock-in** — Prisma error codes are matched structurally; Redis and Sentry are injected behind tiny interfaces; module persistence is a repository interface your app implements.
+- **CJS + ESM**, Node >= 20, Express 4, tree-shakeable subpath exports.
 
-## Install
+## Scaffold a new backend
+
+```bash
+npx @hectordahv/api-kit new my-api
+cd my-api && npm install && cp .env.example .env && npm run dev
+# → runnable API with a CRUD resource + live Swagger UI at http://localhost:3000/docs
+```
+
+## Install (into an existing project)
 
 ```bash
 npm install @hectordahv/api-kit express
@@ -71,16 +96,19 @@ Every response uses the same envelope:
 
 | Subpath | Contents |
 |---|---|
-| `@hectordahv/api-kit` | `createApiKit` kernel + re-exports of everything below except `/app` and the opt-in modules |
+| `@hectordahv/api-kit` | `createApiKit` kernel + re-exports of the core subpaths (`/errors`, `/http`, `/logging`, `/middleware`, `/validation`, `/auth`, `/routes`, `/config`). `/app`, `/crud`, `/server`, `/openapi` and the opt-in modules are imported from their own subpath |
 | `/errors` | `BusinessError` base + `NotFoundError`, `ConflictError`, `UnauthorizedError`, `ForbiddenError`, `UnprocessableError`, auth/resource error families |
 | `/http` | `ResponseBuilder`, `HTTP_STATUS`, `ERROR_CODES`/`SUCCESS_CODES`, message catalogs (`messagesEn`, `messagesEs`), pagination helpers |
 | `/logging` | `createLogger` (Winston, correlation IDs via AsyncLocalStorage), `createRequestLogging` |
 | `/middleware` | `createErrorMiddleware` (Business/Joi/Prisma-duck-typed mapping), rate limiters + `createRedisRateLimitStore`, `idempotencyMiddleware`, sanitization, `KeyValueStore`/`RedisLike` abstractions |
 | `/validation` | `createSchemaValidator` (Joi) |
-| `/auth` | `generateToken`/`verifyToken`, `createValidateToken` (claim extractor injectable), `createRequireUserId` |
+| `/auth` | `generateToken`/`verifyToken`, `createValidateToken` (claim extractor injectable), `createRequireUserId`, `TokenPairService` (stateless access/refresh issue + rotation) |
 | `/routes` | `CommonRoutesConfig` base class, async-handler patching, `CRUD` interface, `BaseDTO` |
 | `/config` | `validateEnvVars(required[])`, `getEnv`, `isProd`/`isDev` |
 | `/app` | `createApp`/`finalizeApp` — standard middleware stack in one call |
+| `/crud` | Opt-in generic CRUD vertical: `SoftDeleteUserScopedRepository`, `CrudService`, `createCrudController`, `registerCrudRoutes` — a user-scoped, soft-delete REST resource in ~30 lines |
+| `/server` | `createHttpServer` (graceful shutdown: drain, cleanup callbacks, force-exit timeout) + `runStartupTasks` (uniform logging + fatal/non-fatal policy) |
+| `/openapi` | Live OpenAPI 3.0 + Swagger UI generated from your Joi schemas and routes — `OpenApiRegistry`, `joiToOpenApi`, `documentCrudResource`, `collectExpressRoutes`, `createOpenApiRoutes`. No hand-edited JSON |
 | `/activity-log` | Opt-in audit trail: middleware factory + fire-and-forget logger + service over your repository |
 | `/parameter-catalog` | Opt-in runtime config catalog (groups → nodes → typed values) with TTL cache; extensible by subclass |
 | `/health` | `createHealthRoutes` with named readiness checks |
@@ -137,6 +165,121 @@ class MyCatalog extends ParameterCatalogService {
   }
 }
 ```
+
+### Generic CRUD in ~30 lines
+
+`/crud` collapses the repeated repository → service → controller → routes stack
+into configuration. It is ORM-agnostic: a Prisma model delegate is structurally
+compatible, so you pass `prisma.some_table` directly and supply one small mapper.
+
+```ts
+import {
+  SoftDeleteUserScopedRepository,
+  CrudService,
+  createCrudController,
+  registerCrudRoutes,
+  type RowMapper,
+} from "@hectordahv/api-kit/crud";
+
+interface Bank { id?: string; userId?: string; status?: string; name?: string }
+
+// The only schema-specific glue: entity <-> row.
+const mapper: RowMapper<Bank> = {
+  toDomain: (r) => ({ id: r.id as string, userId: r.user_id as string, status: r.status as string, name: r.name as string }),
+  toCreateInput: (b) => ({ id: b.id, user_id: b.userId, status: b.status ?? "active", name: b.name }),
+  toUpdateInput: (b) => ({ ...(b.name !== undefined && { name: b.name }) }),
+};
+
+const repository = new SoftDeleteUserScopedRepository<Bank>({ delegate: prisma.user_banks, mapper });
+const service = new CrudService<Bank>(repository);
+const controller = createCrudController<Bank>({ resource: "Bank", service, responses: kit.responses, requireUserId: kit.requireUserId });
+
+registerCrudRoutes(apiRouter, {
+  basePath: "/api/v1/banks",
+  controller,
+  auth: kit.validateToken({ getKey: () => process.env.JWT_KEY! }),
+  validate: { create: kit.validateSchema(CreateBankSchema), update: kit.validateSchema(UpdateBankSchema) },
+  enablePaginated: true,
+});
+```
+
+- **User-scoped by default** — operations without a `userId` return empty/null instead of leaking cross-tenant rows; ownership is verified before update/delete.
+- **Soft-delete by default** — `remove()` flips `status` to `deleted`; pass `hardDelete: true` to actually delete.
+- **Override anything** — extend `CrudService`/`SoftDeleteUserScopedRepository` for domain rules, or use `only`/`validate`/`toDTO` to shape the surface.
+
+### Boot & graceful shutdown
+
+```ts
+import { createHttpServer, runStartupTasks } from "@hectordahv/api-kit/server";
+
+await runStartupTasks(
+  [
+    { name: "seed-catalog", run: () => seedCatalog() },        // non-fatal by default
+    { name: "db-migrate-check", run: () => assertSchema(), fatal: true },
+  ],
+  { logger: kit.logger },
+);
+
+createHttpServer(app, {
+  port: process.env.PORT,
+  logger: kit.logger,
+  onShutdown: [() => prisma.$disconnect(), () => redis.quit()],
+}).listen();
+```
+
+On `SIGTERM`/`SIGINT`: stop accepting connections → run cleanup callbacks → exit,
+with a force-exit timeout if a callback hangs.
+
+### Live API docs (no static JSON)
+
+The spec is generated from the same Joi schemas you validate with and the app's
+route table, and rebuilt on every request — change a DTO or add a route and
+`/openapi.json` + Swagger UI reflect it immediately.
+
+```ts
+import { OpenApiRegistry, documentCrudResource, createOpenApiRoutes } from "@hectordahv/api-kit/openapi";
+
+const openapi = new OpenApiRegistry({ title: "My API", version: "1.0.0" });
+
+// Rich CRUD docs from the same schemas used for validation:
+documentCrudResource({
+  registry: openapi,
+  basePath: "/api/v1/banks",
+  tag: "Banks",
+  dtoName: "Bank",
+  createSchema: CreateBankSchema,   // Joi — becomes the request body schema
+  updateSchema: UpdateBankSchema,
+  paginated: true,
+});
+
+// Serve it. `introspect` surfaces any route not explicitly documented, so
+// nothing is silently missing from the spec.
+createOpenApiRoutes(app, { registry: openapi, introspect: app });
+// → GET /openapi.json (live)   GET /docs (Swagger UI)
+```
+
+`joiToOpenApi(schema)` converts any Joi schema on its own; `OpenApiRegistry.addPath(...)`
+documents individual non-CRUD routes.
+
+### Stateless refresh tokens
+
+```ts
+import { TokenPairService } from "@hectordahv/api-kit/auth";
+
+const tokens = new TokenPairService({
+  accessKey: process.env.JWT_KEY!,
+  refreshKey: process.env.JWT_REFRESH_KEY!,
+  accessTtl: "15m",
+  refreshTtl: "7d",
+});
+
+const pair = tokens.issue(user.id, { remember: true });   // { accessToken, refreshToken }
+const rotated = tokens.refresh(oldRefreshToken);           // verifies + mints a fresh pair
+```
+
+No database or rotation bookkeeping: `refresh()` verifies the refresh JWT and re-issues,
+preserving the original `remember` choice. Claim shape is configurable (`idClaim`,
+`extractUserId`) and supports the legacy `{ user: { _id } }` payload by default.
 
 ### Security defaults
 
