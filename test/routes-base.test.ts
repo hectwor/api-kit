@@ -44,6 +44,19 @@ describe("patchAsyncRouteHandlers", () => {
   });
 });
 
+describe("patchAsyncRouteHandlers preserves handler metadata", () => {
+  it("keeps own props (e.g. validateSchema's schema tag) on the wrapped handler", () => {
+    const app = express();
+    patchAsyncRouteHandlers(app);
+    const tagged = Object.assign(((_req: express.Request, res: express.Response) => res.end()) as express.RequestHandler, {
+      __apiKitSchema: { marker: true },
+    });
+    const route = app.route("/tagged").get(tagged) as unknown as { stack: Array<{ handle: { __apiKitSchema?: unknown } }> };
+    const wrapped = route.stack.find((l) => l.handle.__apiKitSchema);
+    expect(wrapped?.handle.__apiKitSchema).toEqual({ marker: true });
+  });
+});
+
 describe("BaseDTO", () => {
   it("assigns provided fields", () => {
     const dto = new BaseDTO({ id: "1", createdAt: "t" });

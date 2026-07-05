@@ -194,6 +194,49 @@ describe("CRUD HTTP surface", () => {
   });
 });
 
+describe("createCrudController convention config", () => {
+  function buildConfigured() {
+    const kit = createApiKit({ service: "t", environment: "test", capture: { exception: () => undefined } });
+    const delegate = makeDelegate();
+    const repository = new SoftDeleteUserScopedRepository<Widget, Row>({ delegate, mapper });
+    const service = new CrudService<Widget>(repository);
+    const controller = createCrudController<Widget>({
+      resource: "Widget",
+      service,
+      responses: kit.responses,
+      requireUserId: kit.requireUserId,
+      status: { create: 200 },
+      deletePayload: (deleted) => ({ removed: deleted }),
+    });
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      const uid = req.header("x-user");
+      if (uid) req.headers.userId = uid;
+      next();
+    });
+    registerCrudRoutes(app, { basePath: "/widgets", controller });
+    return app;
+  }
+
+  it("honours a per-action status override (create -> 200)", async () => {
+    const app = buildConfigured();
+    const res = await request(app).post("/widgets").set("x-user", "u1").send({ name: "a" });
+    expect(res.status).toBe(200);
+    expect(res.body.message.code).toBe("RESOURCE_CREATED");
+  });
+
+  it("uses a custom deletePayload (the deleted entity instead of { id })", async () => {
+    const app = buildConfigured();
+    const created = await request(app).post("/widgets").set("x-user", "u1").send({ name: "a" });
+    const del = await request(app).delete(`/widgets/${created.body.data.id}`).set("x-user", "u1");
+    expect(del.status).toBe(200);
+    // SoftDeleteUserScopedRepository.deleteById returns boolean, so `removed` is true here;
+    // an app whose service returns the entity would get it projected instead.
+    expect(del.body.data).toEqual({ removed: true });
+  });
+});
+
 describe("registerCrudRoutes per-action middleware", () => {
   function buildWithMiddleware() {
     const kit = createApiKit({ service: "t", environment: "test", capture: { exception: () => undefined } });

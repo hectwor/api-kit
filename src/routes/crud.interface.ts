@@ -11,5 +11,5 @@ export interface CRUD<TResource = unknown, TId = string, TDelete = TResource | n
   readById: (resourceId: TId, userId?: string) => Promise<TResource | null>;
   // Delete semantics vary by service (soft-delete returns the row, others a
   // boolean/void) — override `TDelete` to keep the return strongly typed.
-  deleteById: (id: TId, resourceId?: TResource, userId?: string) => Promise<TDelete>;
+  deleteById: (id: TId, userId?: string) => Promise<TDelete>;
 }

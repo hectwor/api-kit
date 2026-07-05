@@ -3,7 +3,7 @@ import type express from "express";
 const ROUTE_METHODS = ["all", "get", "post", "put", "patch", "delete", "options", "head"] as const;
 
 const wrapHandler = (handler: express.RequestHandler): express.RequestHandler => {
-  return (req, res, next) => {
+  const wrapped: express.RequestHandler = (req, res, next) => {
     try {
       const result: unknown = handler(req, res, next);
       if (result !== null && result !== undefined && typeof (result as Promise<unknown>).then === "function") {
@@ -15,6 +15,10 @@ const wrapHandler = (handler: express.RequestHandler): express.RequestHandler =>
       return undefined;
     }
   };
+  // Preserve own metadata (e.g. the __apiKitSchema tag set by validateSchema) so
+  // OpenAPI introspection still finds it on the wrapped handler.
+  Object.assign(wrapped, handler);
+  return wrapped;
 };
 
 /**
