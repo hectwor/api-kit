@@ -181,6 +181,38 @@ describe("createOpenApiRoutes auto-documents non-CRUD routes from validateSchema
   });
 });
 
+describe("createOpenApiRoutes groups introspected routes by tag", () => {
+  it("derives the tag from the resource segment of the path by default", async () => {
+    const app = express();
+    app.get("/api/v1/movement/:id", (_req, res) => res.end());
+    app.get("/api/v1/account", (_req, res) => res.end());
+
+    const registry = new OpenApiRegistry({ title: "T", version: "1" });
+    createOpenApiRoutes(app, { registry, introspect: app });
+
+    const res = await request(app).get("/openapi.json");
+    expect(res.body.paths["/api/v1/movement/{id}"].get.tags).toEqual(["movement"]);
+    expect(res.body.paths["/api/v1/account"].get.tags).toEqual(["account"]);
+  });
+
+  it("honours a custom introspectTag resolver and falls back to path when it returns undefined", async () => {
+    const app = express();
+    app.get("/api/v1/movement/:id", (_req, res) => res.end());
+    app.get("/health", (_req, res) => res.end());
+
+    const registry = new OpenApiRegistry({ title: "T", version: "1" });
+    createOpenApiRoutes(app, {
+      registry,
+      introspect: app,
+      introspectTag: (route) => (route.path.includes("movement") ? "Movements" : undefined),
+    });
+
+    const res = await request(app).get("/openapi.json");
+    expect(res.body.paths["/api/v1/movement/{id}"].get.tags).toEqual(["Movements"]);
+    expect(res.body.paths["/health"].get.tags).toEqual(["health"]);
+  });
+});
+
 describe("createOpenApiRoutes (live)", () => {
   it("serves the document in real time and reflects introspected routes", async () => {
     const app = express();
@@ -199,5 +231,29 @@ describe("createOpenApiRoutes (live)", () => {
     const html = await request(app).get("/docs");
     expect(html.status).toBe(200);
     expect(html.text).toContain("swagger-ui");
+    // No CSP configured -> inline script carries no nonce attribute.
+    expect(html.text).not.toContain("nonce=");
+  });
+
+  it("injects a CSP nonce into the inline script when provided via resolver", async () => {
+    const app = express();
+    const registry = new OpenApiRegistry({ title: "Live", version: "9" });
+    createOpenApiRoutes(app, { registry, nonce: () => "abc123" });
+
+    const html = await request(app).get("/docs");
+    expect(html.text).toContain('<script nonce="abc123">');
+  });
+
+  it("falls back to res.locals.nonce when no nonce option is given", async () => {
+    const app = express();
+    app.use((_req, res, next) => {
+      res.locals.nonce = "from-locals";
+      next();
+    });
+    const registry = new OpenApiRegistry({ title: "Live", version: "9" });
+    createOpenApiRoutes(app, { registry });
+
+    const html = await request(app).get("/docs");
+    expect(html.text).toContain('<script nonce="from-locals">');
   });
 });

@@ -193,3 +193,49 @@ describe("CRUD HTTP surface", () => {
     expect(res.body.data.pagination).toMatchObject({ page: 1, limit: 2, total: 5, totalPages: 3, hasMore: true });
   });
 });
+
+describe("registerCrudRoutes per-action middleware", () => {
+  function buildWithMiddleware() {
+    const kit = createApiKit({ service: "t", environment: "test", capture: { exception: () => undefined } });
+    const delegate = makeDelegate();
+    const repository = new SoftDeleteUserScopedRepository<Widget, Row>({ delegate, mapper });
+    const service = new CrudService<Widget>(repository);
+    const controller = createCrudController<Widget>({ resource: "Widget", service, responses: kit.responses, requireUserId: kit.requireUserId });
+    const order: string[] = [];
+
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      const uid = req.header("x-user");
+      if (uid) req.headers.userId = uid;
+      next();
+    });
+    registerCrudRoutes(app, {
+      basePath: "/widgets",
+      controller,
+      middleware: {
+        create: [
+          (_req, _res, next) => { order.push("mw1"); next(); },
+          (_req, _res, next) => { order.push("mw2"); next(); },
+        ],
+        getById: (req, res, next) => (req.header("x-block") ? res.status(403).json({ blocked: true }) : next()),
+      },
+    });
+    return { app, order };
+  }
+
+  it("runs create middleware in order before the controller", async () => {
+    const { app, order } = buildWithMiddleware();
+    const res = await request(app).post("/widgets").set("x-user", "u1").send({ name: "a" });
+    expect(res.status).toBe(201);
+    expect(order).toEqual(["mw1", "mw2"]);
+  });
+
+  it("lets a per-action middleware short-circuit before the controller", async () => {
+    const { app } = buildWithMiddleware();
+    const created = await request(app).post("/widgets").set("x-user", "u1").send({ name: "a" });
+    const blocked = await request(app).get(`/widgets/${created.body.data.id}`).set("x-user", "u1").set("x-block", "1");
+    expect(blocked.status).toBe(403);
+    expect(blocked.body.blocked).toBe(true);
+  });
+});

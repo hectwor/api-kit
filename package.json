@@ -1,6 +1,6 @@
 {
   "name": "@hectordahv/api-kit",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.4",
   "description": "Opinionated Express + TypeScript API foundation and scaffolder. Standardized response envelope, error handling, JWT auth + stateless refresh tokens, rate limiting, structured logging with correlation IDs, Joi validation, idempotency, graceful shutdown, a generic user-scoped soft-delete CRUD vertical, live auto-generated OpenAPI/Swagger from your Joi schemas, and opt-in modules (activity log, parameter catalog, health checks). Includes a `new` CLI to scaffold a runnable backend.",
   "license": "MIT",
   "author": "hectordahv",
@@ -57,6 +57,9 @@
       ],
       "crud": [
         "./dist/crud/index.d.ts"
+      ],
+      "mapping": [
+        "./dist/mapping/index.d.ts"
       ],
       "container": [
         "./dist/container/index.d.ts"
@@ -190,6 +193,16 @@
       "require": {
         "types": "./dist/crud/index.d.ts",
         "default": "./dist/crud/index.js"
+      }
+    },
+    "./mapping": {
+      "import": {
+        "types": "./dist/mapping/index.d.mts",
+        "default": "./dist/mapping/index.mjs"
+      },
+      "require": {
+        "types": "./dist/mapping/index.d.ts",
+        "default": "./dist/mapping/index.js"
       }
     },
     "./container": {

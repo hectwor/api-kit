@@ -13,6 +13,7 @@ export default defineConfig({
     "src/config/index.ts",
     "src/app/index.ts",
     "src/crud/index.ts",
+    "src/mapping/index.ts",
     "src/container/index.ts",
     "src/server/index.ts",
     "src/openapi/index.ts",

@@ -49,7 +49,7 @@ function scaffold(dir, name) {
   write(root, "src/config/kit.ts", kitTs(name));
   write(root, "src/widgets/widget.schema.ts", widgetSchemaTs());
   write(root, "src/widgets/widget.routes.ts", widgetRoutesTs());
-  write(root, "src/app.ts", appTs());
+  write(root, "src/app.ts", appTs(name));
   write(root, "src/server.ts", serverTs());
 
   console.log(`\n\x1b[1mDone.\x1b[0m Next:\n`);
@@ -73,7 +73,10 @@ function pkgJson(name) {
       start: "node dist/server.js",
     },
     dependencies: {
-      "@hectordahv/api-kit": `^${PKG_VERSION}`,
+      // Pinned exact: api-kit is in alpha, so a caret over a prerelease would
+      // silently pull unreviewed builds. Bump deliberately.
+      "@hectordahv/api-kit": PKG_VERSION,
+      dotenv: "^16.4.5",
       express: "^4.21.2",
       joi: "^17.13.3",
     },
@@ -91,8 +94,10 @@ function tsconfig() {
     {
       compilerOptions: {
         target: "ES2021",
-        module: "commonjs",
-        moduleResolution: "node",
+        // node16 reads the package "exports" map correctly (api-kit ships subpath
+        // exports like /app, /crud, /openapi). Emits CJS since package type=commonjs.
+        module: "node16",
+        moduleResolution: "node16",
         esModuleInterop: true,
         strict: true,
         skipLibCheck: true,
@@ -200,7 +205,7 @@ export function registerWidgetRoutes(router: IRouter, openapi: OpenApiRegistry) 
 `;
 }
 
-function appTs() {
+function appTs(name) {
   return `import express from "express";
 
 import { createApp, finalizeApp } from "@hectordahv/api-kit/app";
@@ -214,7 +219,7 @@ const { app } = createApp({ kit, apiPrefix: "/api/v1" });
 // Demo: pretend a user is authenticated (replace with kit.validateToken).
 app.use((req, _res, next) => { req.headers.userId = req.header("x-user") ?? "demo-user"; next(); });
 
-const openapi = new OpenApiRegistry({ title: "My API", version: "1.0.0" });
+const openapi = new OpenApiRegistry({ title: ${JSON.stringify(name)}, version: "1.0.0" });
 registerWidgetRoutes(app, openapi);
 createOpenApiRoutes(app, { registry: openapi, introspect: app });
 
@@ -225,7 +230,9 @@ export { app };
 }
 
 function serverTs() {
-  return `import { createHttpServer, runStartupTasks } from "@hectordahv/api-kit/server";
+  return `import "dotenv/config"; // load .env before anything reads process.env
+
+import { createHttpServer, runStartupTasks } from "@hectordahv/api-kit/server";
 
 import { app } from "./app";
 import { kit } from "./config/kit";
@@ -237,7 +244,7 @@ async function main() {
   );
 
   createHttpServer(app, {
-    port: process.env.PORT ?? 3000,
+    port: Number(process.env.PORT) || 3000,
     logger: kit.logger,
     onShutdown: [/* () => prisma.$disconnect(), () => redis.quit() */],
   }).listen();

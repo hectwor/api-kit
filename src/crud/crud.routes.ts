@@ -20,6 +20,13 @@ export interface CrudRoutesConfig {
     create?: express.RequestHandler;
     update?: express.RequestHandler;
   };
+  /**
+   * Extra per-action middleware, inserted after `auth`/`validate` and before the
+   * controller handler — for cross-cutting concerns the generic controller doesn't
+   * own (idempotency, feature gating, uniqueness or existence checks, etc.).
+   * Runs in array order, giving the caller full control over interleaving.
+   */
+  middleware?: Partial<Record<CrudAction, express.RequestHandler | express.RequestHandler[]>>;
   /** Restrict to a subset of actions. Default: all. */
   only?: CrudAction[];
   /** Mount a `GET {basePath}/paginated` route. Default: `false`. */
@@ -61,18 +68,20 @@ export function registerCrudRoutes(app: AppOrRouter, config: CrudRoutesConfig): 
     enabled.delete("paginated");
   }
 
+  const extra = (action: CrudAction) => toArray(config.middleware?.[action]);
+
   if (enabled.has("paginated")) {
-    app.route(`${basePath}/paginated`).get(...auth, controller.paginated);
+    app.route(`${basePath}/paginated`).get(...auth, ...extra("paginated"), controller.paginated);
   }
 
   const collection = app.route(basePath);
-  if (enabled.has("list")) collection.get(...auth, controller.list);
-  if (enabled.has("create")) collection.post(...auth, ...toArray(config.validate?.create), controller.create);
+  if (enabled.has("list")) collection.get(...auth, ...extra("list"), controller.list);
+  if (enabled.has("create")) collection.post(...auth, ...toArray(config.validate?.create), ...extra("create"), controller.create);
 
   const item = app.route(idPath);
-  if (enabled.has("getById")) item.get(...auth, controller.getById);
-  if (enabled.has("update")) item.put(...auth, ...toArray(config.validate?.update), controller.update);
-  if (enabled.has("remove")) item.delete(...auth, controller.remove);
+  if (enabled.has("getById")) item.get(...auth, ...extra("getById"), controller.getById);
+  if (enabled.has("update")) item.put(...auth, ...toArray(config.validate?.update), ...extra("update"), controller.update);
+  if (enabled.has("remove")) item.delete(...auth, ...extra("remove"), controller.remove);
 
   return app;
 }

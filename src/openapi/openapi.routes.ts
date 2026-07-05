@@ -2,7 +2,7 @@ import type express from "express";
 
 import { SCHEMA_TAG } from "../validation/schema-validator";
 
-import { collectExpressRoutes } from "./express-introspect";
+import { collectExpressRoutes, type DiscoveredRoute } from "./express-introspect";
 import { isJoiLike, joiToOpenApi, type JoiLike } from "./joi-to-openapi";
 import { OpenApiRegistry } from "./registry";
 
@@ -29,11 +29,37 @@ export interface OpenApiRoutesOptions {
   introspect?: express.IRouter;
   /** Paths (prefixes) to omit from introspection, e.g. the docs paths. */
   introspectIgnore?: string[];
+  /**
+   * Swagger tag for routes discovered via `introspect` that weren't explicitly
+   * documented. Without this every introspected route lands in a single flat
+   * `"(undocumented)"` bucket, which is unreadable once an app has more than a
+   * handful of resources.
+   *
+   * Pass a resolver `(route) => tag` to group them (e.g. by resource). When it
+   * returns `undefined`, the tag is derived from the URL path — the first
+   * meaningful segment after any `api` / `v1`-style prefix (so
+   * `/api/v1/movement/:id` → `"movement"`). Omit the option entirely to get that
+   * path-derived grouping by default. Pass a static string to force one tag.
+   */
+  introspectTag?: string | ((route: DiscoveredRoute) => string | undefined);
   /** Swagger UI CDN version. Default: `"5"`. */
   swaggerUiVersion?: string;
+  /**
+   * Per-request CSP nonce for the Swagger UI's inline `<script>`. Apps running a
+   * strict Content-Security-Policy (`script-src` without `'unsafe-inline'`) must
+   * supply the same nonce their CSP advertises, otherwise the browser blocks the
+   * inline bootstrap and the UI never mounts.
+   *
+   * Pass a resolver `(req, res) => nonce` or a static string. When omitted, the
+   * common `res.locals.nonce` convention (set by helmet et al.) is used
+   * automatically. If nothing resolves, no `nonce` attribute is emitted, so the
+   * output is byte-for-byte identical for apps without a CSP.
+   */
+  nonce?: string | ((req: express.Request, res: express.Response) => string | undefined);
 }
 
-function swaggerHtml(jsonPath: string, title: string, version: string): string {
+function swaggerHtml(jsonPath: string, title: string, version: string, nonce?: string): string {
+  const nonceAttr = nonce ? ` nonce="${nonce}"` : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -45,11 +71,41 @@ function swaggerHtml(jsonPath: string, title: string, version: string): string {
 <body>
   <div id="swagger-ui"></div>
   <script src="https://unpkg.com/swagger-ui-dist@${version}/swagger-ui-bundle.js" crossorigin></script>
-  <script>
+  <script${nonceAttr}>
     window.ui = SwaggerUIBundle({ url: ${JSON.stringify(jsonPath)}, dom_id: "#swagger-ui", deepLinking: true });
   </script>
 </body>
 </html>`;
+}
+
+/**
+ * Derive a Swagger tag from a URL path: the first segment that isn't an `api`
+ * prefix or a `v1`-style version, e.g. `/api/v1/movement/:id` → `"movement"`.
+ * Falls back to `"(undocumented)"` when no meaningful segment exists.
+ */
+function deriveTagFromPath(path: string): string {
+  const segments = path.split("?")[0].split("/").filter(Boolean);
+  for (const seg of segments) {
+    if (seg === "api" || /^v\d+$/.test(seg)) continue;
+    if (seg.startsWith(":")) break; // a param before any resource segment -> nothing to name it after
+    return seg;
+  }
+  return "(undocumented)";
+}
+
+/** Pick the tag for an introspected, otherwise-undocumented route. */
+function resolveIntrospectTag(options: OpenApiRoutesOptions, route: DiscoveredRoute): string {
+  const { introspectTag } = options;
+  const value = typeof introspectTag === "function" ? introspectTag(route) : introspectTag;
+  return value ?? deriveTagFromPath(route.path);
+}
+
+/** Resolve the CSP nonce for a docs request, falling back to `res.locals.nonce`. */
+function resolveNonce(options: OpenApiRoutesOptions, req: express.Request, res: express.Response): string | undefined {
+  const { nonce } = options;
+  const value = typeof nonce === "function" ? nonce(req, res) : nonce;
+  const resolved = value ?? (res.locals as Record<string, unknown>).nonce;
+  return typeof resolved === "string" && resolved.length > 0 ? resolved : undefined;
 }
 
 /**
@@ -79,7 +135,7 @@ export function createOpenApiRoutes(app: express.IRouter, options: OpenApiRoutes
         registry.addPath({
           method: route.method,
           path: route.path,
-          tags: ["(undocumented)"],
+          tags: [resolveIntrospectTag(options, route)],
           ...(tagged && { requestBody: joiToOpenApi(tagged) }),
           responses: { "200": { description: "OK" } },
         });
@@ -90,8 +146,8 @@ export function createOpenApiRoutes(app: express.IRouter, options: OpenApiRoutes
 
   if (docsPath) {
     const doc = registry.build() as { info: { title: string; version: string } };
-    app.get(docsPath, (_req, res) => {
-      res.type("html").send(swaggerHtml(jsonPath, doc.info.title, uiVersion));
+    app.get(docsPath, (req, res) => {
+      res.type("html").send(swaggerHtml(jsonPath, doc.info.title, uiVersion, resolveNonce(options, req, res)));
     });
   }
 }
