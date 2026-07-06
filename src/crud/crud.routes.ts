@@ -31,6 +31,13 @@ export interface CrudRoutesConfig {
   only?: CrudAction[];
   /** Mount a `GET {basePath}/paginated` route. Default: `false`. */
   enablePaginated?: boolean;
+  /**
+   * HTTP method for the update route. Default: `"put"`. The controller's
+   * `update` handler already treats the body as a partial patch regardless of
+   * verb, so `"patch"` is the more accurate REST semantic when the update
+   * genuinely accepts a subset of fields — set it per-resource as needed.
+   */
+  updateMethod?: "put" | "patch";
 }
 
 const ALL_ACTIONS: CrudAction[] = ["list", "paginated", "getById", "create", "update", "remove"];
@@ -48,7 +55,7 @@ function toArray(mw?: express.RequestHandler | express.RequestHandler[]): expres
  * GET    {basePath}/paginated  → paginated   (opt-in)
  * POST   {basePath}            → create
  * GET    {basePath}/:id        → getById
- * PUT    {basePath}/:id        → update
+ * PUT|PATCH {basePath}/:id     → update      (PUT by default, see `updateMethod`)
  * DELETE {basePath}/:id        → remove
  * ```
  *
@@ -80,7 +87,10 @@ export function registerCrudRoutes(app: AppOrRouter, config: CrudRoutesConfig): 
 
   const item = app.route(idPath);
   if (enabled.has("getById")) item.get(...auth, ...extra("getById"), controller.getById);
-  if (enabled.has("update")) item.put(...auth, ...toArray(config.validate?.update), ...extra("update"), controller.update);
+  if (enabled.has("update")) {
+    const updateMethod = config.updateMethod ?? "put";
+    item[updateMethod](...auth, ...toArray(config.validate?.update), ...extra("update"), controller.update);
+  }
   if (enabled.has("remove")) item.delete(...auth, ...extra("remove"), controller.remove);
 
   return app;

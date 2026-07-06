@@ -318,3 +318,41 @@ describe("registerCrudRoutes per-action middleware", () => {
     expect(blocked.body.blocked).toBe(true);
   });
 });
+
+describe("registerCrudRoutes updateMethod", () => {
+  function buildApp(updateMethod?: "put" | "patch") {
+    const kit = createApiKit({ service: "t", environment: "test", capture: { exception: () => undefined } });
+    const delegate = makeDelegate();
+    const repository = new SoftDeleteUserScopedRepository<Widget, Row>({ delegate, mapper });
+    const service = new CrudService<Widget>(repository);
+    const controller = createCrudController<Widget>({ resource: "Widget", service, responses: kit.responses, requireUserId: kit.requireUserId });
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      const uid = req.header("x-user");
+      if (uid) req.headers.userId = uid;
+      next();
+    });
+    registerCrudRoutes(app, { basePath: "/widgets", controller, updateMethod });
+    return app;
+  }
+
+  it("defaults to PUT for update", async () => {
+    const app = buildApp();
+    const created = await request(app).post("/widgets").set("x-user", "u1").send({ name: "a" });
+    const patched = await request(app).patch(`/widgets/${created.body.data.id}`).set("x-user", "u1").send({ name: "b" });
+    expect(patched.status).toBe(404); // PATCH not wired when updateMethod is unset
+    const put = await request(app).put(`/widgets/${created.body.data.id}`).set("x-user", "u1").send({ name: "b" });
+    expect(put.status).toBe(200);
+  });
+
+  it("wires PATCH instead of PUT when updateMethod is 'patch'", async () => {
+    const app = buildApp("patch");
+    const created = await request(app).post("/widgets").set("x-user", "u1").send({ name: "a" });
+    const put = await request(app).put(`/widgets/${created.body.data.id}`).set("x-user", "u1").send({ name: "b" });
+    expect(put.status).toBe(404); // PUT not wired when updateMethod is 'patch'
+    const patched = await request(app).patch(`/widgets/${created.body.data.id}`).set("x-user", "u1").send({ name: "b" });
+    expect(patched.status).toBe(200);
+    expect(patched.body.data.name).toBe("b");
+  });
+});
