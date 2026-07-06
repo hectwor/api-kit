@@ -33,6 +33,21 @@ export interface CrudStatusOverrides {
   remove?: number;
 }
 
+/**
+ * Overrides for how the controller reaches its data. Each defaults to the matching
+ * `service` method; provide one when a service exposes a differently-named or
+ * differently-scoped method (e.g. an ownership-scoped `getByIdAndUser`). Fully
+ * generic — the app closes over its own service in the supplied function.
+ */
+export interface CrudOperations<E extends BaseEntity> {
+  all?: (userId: string | undefined, query?: ListQuery) => Promise<E[]>;
+  paginated?: (userId: string | undefined, page: number, limit: number, query?: ListQuery) => Promise<PageResult<E>>;
+  readById?: (id: string, userId: string) => Promise<E | null>;
+  create?: (entity: E) => Promise<E>;
+  updateById?: (id: string, patch: Partial<E>, userId: string) => Promise<E | null>;
+  deleteById?: (id: string, userId: string) => Promise<unknown>;
+}
+
 export interface CrudControllerConfig<E extends BaseEntity, DTO = E> {
   /** Human name used only in the 404 error message (e.g. `"Bank"`). */
   resource: string;
@@ -59,6 +74,18 @@ export interface CrudControllerConfig<E extends BaseEntity, DTO = E> {
    * service returns one) and the id. Default: `{ id }`.
    */
   deletePayload?: (deleted: unknown, id: string) => unknown;
+  /** Override how the controller reads/writes (e.g. ownership-scoped service methods). */
+  operations?: CrudOperations<E>;
+  /**
+   * Map the raw create request body to the entity input. Default:
+   * `{ ...body, userId, createdBy: userId }`. Use to normalize/rename fields.
+   */
+  buildCreate?: (body: unknown, userId: string) => E;
+  /**
+   * Map the raw update request body to the patch input. Default:
+   * `{ ...body, updatedBy: userId }`.
+   */
+  buildUpdate?: (body: unknown, userId: string) => Partial<E>;
 }
 
 export interface CrudController {
@@ -88,28 +115,40 @@ export function createCrudController<E extends BaseEntity, DTO = E>(
   const { resource, service, responses, requireUserId } = config;
   const idParam = config.idParam ?? "id";
   const status = config.status ?? {};
+  const ops = config.operations ?? {};
   const project = (entity: E): DTO | E => (config.toDTO ? config.toDTO(entity) : entity);
   const deletePayload = config.deletePayload ?? ((_deleted: unknown, id: string) => ({ id }));
+  const buildCreate = config.buildCreate ?? ((body: unknown, userId: string) => ({ ...(body as object), userId, createdBy: userId }) as E);
+  const buildUpdate = config.buildUpdate ?? ((body: unknown, userId: string) => ({ ...(body as object), updatedBy: userId }) as Partial<E>);
   const text = (key: string): string => responses.messages[key] ?? key;
   const listQuery = (req: express.Request) =>
     config.listQuery ? parseListQuery(req.query as Record<string, unknown>, config.listQuery) : undefined;
   const notFound = (res: express.Response) =>
     responses.sendError(res, ERROR_CODES.NOT_FOUND, `${resource} not found or does not belong to user`, 404);
 
+  // Data accessors, each defaulting to the matching service method.
+  const allOp = ops.all ?? ((userId: string | undefined, query?: ListQuery) => service.all(userId, query));
+  const paginatedOp =
+    ops.paginated ?? (service.paginated ? service.paginated.bind(service) : undefined);
+  const readByIdOp = ops.readById ?? ((id: string, userId: string) => service.readById(id, userId));
+  const createOp = ops.create ?? ((entity: E) => service.create(entity));
+  const updateByIdOp = ops.updateById ?? ((id: string, patch: Partial<E>, userId: string) => service.updateById(id, patch, userId));
+  const deleteByIdOp = ops.deleteById ?? ((id: string, userId: string) => service.deleteById(id, userId));
+
   return {
     list: async (req, res) => {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      const items = await service.all(userId, listQuery(req));
+      const items = await allOp(userId, listQuery(req));
       responses.sendSuccess(res, items.map(project), SUCCESS_CODES.LISTED, text("LISTED"), status.list ?? 200);
     },
 
     paginated: async (req, res) => {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      if (!service.paginated) throw new Error(`${resource} service does not implement paginated()`);
+      if (!paginatedOp) throw new Error(`${resource} has no paginated() service method or operations.paginated override`);
       const { page, limit } = parsePagination(req.query as Record<string, unknown>, config.pagination);
-      const { items, total } = await service.paginated(userId, page, limit, listQuery(req));
+      const { items, total } = await paginatedOp(userId, page, limit, listQuery(req));
       const payload = paginatedData(items.map(project), page, limit, total);
       responses.sendSuccess(res, payload, SUCCESS_CODES.LISTED, text("LISTED"), status.paginated ?? 200);
     },
@@ -117,7 +156,7 @@ export function createCrudController<E extends BaseEntity, DTO = E>(
     getById: async (req, res) => {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      const entity = await service.readById(req.params[idParam], userId);
+      const entity = await readByIdOp(req.params[idParam], userId);
       if (!entity) return notFound(res);
       responses.sendSuccess(res, project(entity), SUCCESS_CODES.RETRIEVED, text("RETRIEVED"), status.getById ?? 200);
     },
@@ -125,14 +164,14 @@ export function createCrudController<E extends BaseEntity, DTO = E>(
     create: async (req, res) => {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      const created = await service.create({ ...req.body, userId, createdBy: userId } as E);
+      const created = await createOp(buildCreate(req.body, userId));
       responses.sendSuccess(res, project(created), SUCCESS_CODES.CREATED, text("CREATED"), status.create ?? 201);
     },
 
     update: async (req, res) => {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      const updated = await service.updateById(req.params[idParam], { ...req.body, updatedBy: userId } as Partial<E>, userId);
+      const updated = await updateByIdOp(req.params[idParam], buildUpdate(req.body, userId), userId);
       if (!updated) return notFound(res);
       responses.sendSuccess(res, project(updated), SUCCESS_CODES.UPDATED, text("UPDATED"), status.update ?? 200);
     },
@@ -141,7 +180,7 @@ export function createCrudController<E extends BaseEntity, DTO = E>(
       const userId = requireUserId(req, res);
       if (!userId) return;
       const id = req.params[idParam];
-      const deleted = await service.deleteById(id, userId);
+      const deleted = await deleteByIdOp(id, userId);
       if (!deleted) return notFound(res);
       responses.sendSuccess(res, deletePayload(deleted, id), SUCCESS_CODES.DELETED, text("DELETED"), status.remove ?? 200);
     },

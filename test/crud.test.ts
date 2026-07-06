@@ -235,6 +235,42 @@ describe("createCrudController convention config", () => {
     // an app whose service returns the entity would get it projected instead.
     expect(del.body.data).toEqual({ removed: true });
   });
+
+  it("operations + buildCreate override where the controller reads and how the body maps", async () => {
+    const kit = createApiKit({ service: "t", environment: "test", capture: { exception: () => undefined } });
+    const delegate = makeDelegate();
+    const repository = new SoftDeleteUserScopedRepository<Widget, Row>({ delegate, mapper });
+    const service = new CrudService<Widget>(repository);
+    const seen: string[] = [];
+    const controller = createCrudController<Widget>({
+      resource: "Widget",
+      service,
+      responses: kit.responses,
+      requireUserId: kit.requireUserId,
+      // custom scoped read + a body transform (rename `label` -> `name`)
+      operations: {
+        readById: async (id, userId) => {
+          seen.push(`readById:${id}:${userId}`);
+          return service.readById(id, userId);
+        },
+      },
+      buildCreate: (body, userId) => ({ name: (body as { label?: string }).label, userId, createdBy: userId }),
+    });
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      const uid = req.header("x-user");
+      if (uid) req.headers.userId = uid;
+      next();
+    });
+    registerCrudRoutes(app, { basePath: "/widgets", controller });
+
+    const created = await request(app).post("/widgets").set("x-user", "u1").send({ label: "hi" });
+    expect(created.body.data.name).toBe("hi"); // buildCreate mapped label -> name
+    const got = await request(app).get(`/widgets/${created.body.data.id}`).set("x-user", "u1");
+    expect(got.status).toBe(200);
+    expect(seen).toContain(`readById:${created.body.data.id}:u1`); // operations.readById was used
+  });
 });
 
 describe("registerCrudRoutes per-action middleware", () => {
