@@ -1,6 +1,28 @@
 import type { BaseEntity, CrudRepository, ModelDelegate, PageResult, RowMapper } from "./crud.types";
 import type { ListQuery } from "./list-query";
 
+/** Prisma `include`/`select` to merge into a query. Provide at most one of the two, matching Prisma's own rule. */
+export interface QueryShape {
+  include?: Record<string, unknown>;
+  select?: Record<string, unknown>;
+}
+
+/**
+ * Per-operation relation-loading shape, so a resource needing joined data
+ * (e.g. a lean `select` for lists but a deep `include` for a single-record
+ * read) doesn't have to hand-roll its whole repository just for that.
+ * `default` applies to any bucket without its own override.
+ */
+export interface QueryArgsConfig {
+  default?: QueryShape;
+  /** `findById` / `findByIdAndUserId`. */
+  findById?: QueryShape;
+  /** `findAll` / `findAllByUserId` / `findPaginatedByUserId`. */
+  list?: QueryShape;
+  create?: QueryShape;
+  update?: QueryShape;
+}
+
 export interface SoftDeleteRepositoryConfig<E extends BaseEntity, Row = Record<string, unknown>> {
   /** Prisma-like model delegate (e.g. `prisma.user_banks`). */
   delegate: ModelDelegate<Row>;
@@ -30,6 +52,8 @@ export interface SoftDeleteRepositoryConfig<E extends BaseEntity, Row = Record<s
   columnMap?: Record<string, string>;
   /** Columns a `ListQuery.search` term is matched against (case-insensitive contains). */
   searchColumns?: string[];
+  /** Per-operation Prisma `include`/`select` — see {@link QueryArgsConfig}. */
+  queryArgs?: QueryArgsConfig;
 }
 
 /**
@@ -53,6 +77,7 @@ export class SoftDeleteUserScopedRepository<E extends BaseEntity, Row = Record<s
   protected readonly defaultOrderBy: unknown;
   protected readonly columnMap: Record<string, string>;
   protected readonly searchColumns: string[];
+  protected readonly queryArgsConfig: QueryArgsConfig;
 
   constructor(config: SoftDeleteRepositoryConfig<E, Row>) {
     this.delegate = config.delegate;
@@ -67,6 +92,12 @@ export class SoftDeleteUserScopedRepository<E extends BaseEntity, Row = Record<s
     this.defaultOrderBy = config.defaultOrderBy;
     this.columnMap = config.columnMap ?? {};
     this.searchColumns = config.searchColumns ?? [];
+    this.queryArgsConfig = config.queryArgs ?? {};
+  }
+
+  /** Resolve the `include`/`select` for one operation bucket, falling back to `queryArgs.default`. */
+  protected queryArgs(bucket: keyof Omit<QueryArgsConfig, "default">): QueryShape {
+    return this.queryArgsConfig[bucket] ?? this.queryArgsConfig.default ?? {};
   }
 
   /** `where` clause restricted to live rows. */
@@ -97,19 +128,20 @@ export class SoftDeleteUserScopedRepository<E extends BaseEntity, Row = Record<s
   }
 
   async findById(id: string): Promise<E | null> {
-    const row = await this.delegate.findFirst({ where: this.activeWhere({ [this.idField]: id }) });
+    const row = await this.delegate.findFirst({ where: this.activeWhere({ [this.idField]: id }), ...this.queryArgs("findById") });
     return row ? this.mapper.toDomain(row) : null;
   }
 
   async findByIdAndUserId(id: string, userId: string): Promise<E | null> {
     const row = await this.delegate.findFirst({
       where: this.activeWhere({ [this.idField]: id, [this.userField]: userId }),
+      ...this.queryArgs("findById"),
     });
     return row ? this.mapper.toDomain(row) : null;
   }
 
   async findAll(limit: number = this.maxFindAll): Promise<E[]> {
-    const rows = await this.delegate.findMany({ where: this.activeWhere(), take: limit });
+    const rows = await this.delegate.findMany({ where: this.activeWhere(), take: limit, ...this.queryArgs("list") });
     return rows.map((row) => this.mapper.toDomain(row));
   }
 
@@ -118,6 +150,7 @@ export class SoftDeleteUserScopedRepository<E extends BaseEntity, Row = Record<s
     const rows = await this.delegate.findMany({
       where: this.buildWhere(userId, query),
       ...(orderBy !== undefined && { orderBy }),
+      ...this.queryArgs("list"),
     });
     return rows.map((row) => this.mapper.toDomain(row));
   }
@@ -133,6 +166,7 @@ export class SoftDeleteUserScopedRepository<E extends BaseEntity, Row = Record<s
         take: safeLimit,
         skip: (safePage - 1) * safeLimit,
         ...(orderBy !== undefined && { orderBy }),
+        ...this.queryArgs("list"),
       }),
       this.delegate.count({ where }),
     ]);
@@ -140,7 +174,7 @@ export class SoftDeleteUserScopedRepository<E extends BaseEntity, Row = Record<s
   }
 
   async create(entity: E): Promise<E> {
-    const row = await this.delegate.create({ data: this.mapper.toCreateInput(entity) });
+    const row = await this.delegate.create({ data: this.mapper.toCreateInput(entity), ...this.queryArgs("create") });
     return this.mapper.toDomain(row);
   }
 
@@ -148,6 +182,7 @@ export class SoftDeleteUserScopedRepository<E extends BaseEntity, Row = Record<s
     const row = await this.delegate.update({
       where: { [this.idField]: id },
       data: this.mapper.toUpdateInput(entity),
+      ...this.queryArgs("update"),
     });
     return row ? this.mapper.toDomain(row) : null;
   }

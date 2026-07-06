@@ -356,3 +356,66 @@ describe("registerCrudRoutes updateMethod", () => {
     expect(patched.body.data.name).toBe("b");
   });
 });
+
+describe("SoftDeleteUserScopedRepository queryArgs (include/select per operation)", () => {
+  /** Delegate that records the exact args each method was called with, for assertion. */
+  function makeSpyDelegate(): ModelDelegate<Row> & { rows: Row[]; calls: Record<string, unknown[]> } {
+    const base = makeDelegate();
+    const calls: Record<string, unknown[]> = { findFirst: [], findMany: [], create: [], update: [] };
+    return {
+      ...base,
+      calls,
+      findFirst: (args) => { calls.findFirst.push(args); return base.findFirst(args); },
+      findMany: (args) => { calls.findMany.push(args); return base.findMany(args); },
+      create: (args) => { calls.create.push(args); return base.create(args); },
+      update: (args) => { calls.update.push(args); return base.update(args); },
+    };
+  }
+
+  it("applies a single `default` shape to every bucket (findById/list/create/update)", async () => {
+    const delegate = makeSpyDelegate();
+    const shape = { include: { owner: true } };
+    const repo = new SoftDeleteUserScopedRepository<Widget, Row>({ delegate, mapper, queryArgs: { default: shape } });
+
+    const created = await repo.create({ userId: "u1", name: "a" });
+    expect(delegate.calls.create[0]).toMatchObject(shape);
+
+    await repo.findById(created.id!);
+    expect(delegate.calls.findFirst[0]).toMatchObject(shape);
+
+    await repo.findAllByUserId("u1");
+    expect(delegate.calls.findMany[0]).toMatchObject(shape);
+
+    await repo.update(created.id!, { name: "b" });
+    expect(delegate.calls.update[0]).toMatchObject(shape);
+  });
+
+  it("lets a specific bucket override `default`, and omits shape entirely for buckets with neither", async () => {
+    const delegate = makeSpyDelegate();
+    const findByIdShape = { include: { deep: true } };
+    const listShape = { select: { id: true, name: true } };
+    const repo = new SoftDeleteUserScopedRepository<Widget, Row>({ delegate, mapper, queryArgs: { findById: findByIdShape, list: listShape } });
+
+    const created = await repo.create({ userId: "u1", name: "a" });
+    expect(delegate.calls.create[0]).not.toHaveProperty("include");
+    expect(delegate.calls.create[0]).not.toHaveProperty("select");
+
+    await repo.findById(created.id!);
+    expect(delegate.calls.findFirst[0]).toMatchObject(findByIdShape);
+
+    await repo.findAllByUserId("u1");
+    expect(delegate.calls.findMany[0]).toMatchObject(listShape);
+  });
+
+  it("defaults to no include/select at all when queryArgs is omitted (unchanged behaviour)", async () => {
+    const delegate = makeSpyDelegate();
+    const repo = new SoftDeleteUserScopedRepository<Widget, Row>({ delegate, mapper });
+    const created = await repo.create({ userId: "u1", name: "a" });
+    await repo.findById(created.id!);
+    await repo.findAllByUserId("u1");
+    for (const bucket of ["create", "findFirst", "findMany"] as const) {
+      expect(delegate.calls[bucket][0]).not.toHaveProperty("include");
+      expect(delegate.calls[bucket][0]).not.toHaveProperty("select");
+    }
+  });
+});

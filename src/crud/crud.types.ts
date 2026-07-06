@@ -26,19 +26,28 @@ export interface BaseEntity {
 
 /**
  * Structural subset of a Prisma model delegate used by the generic repository.
- * `Row` is the persistence row shape (snake_case columns, etc.).
+ * `Row` is the persistence row shape (snake_case columns, etc.). `include`/
+ * `select` are accepted (and spread in) so a repository can shape relation
+ * loading per query — see `SoftDeleteRepositoryConfig.queryArgs`.
  */
 export interface ModelDelegate<Row = Record<string, unknown>> {
-  findFirst(args: { where?: Record<string, unknown> }): Promise<Row | null>;
+  findFirst(args: { where?: Record<string, unknown>; include?: Record<string, unknown>; select?: Record<string, unknown> }): Promise<Row | null>;
   findMany(args?: {
     where?: Record<string, unknown>;
     take?: number;
     skip?: number;
     orderBy?: unknown;
+    include?: Record<string, unknown>;
+    select?: Record<string, unknown>;
   }): Promise<Row[]>;
   count(args?: { where?: Record<string, unknown> }): Promise<number>;
-  create(args: { data: Record<string, unknown> }): Promise<Row>;
-  update(args: { where: Record<string, unknown>; data: Record<string, unknown> }): Promise<Row>;
+  create(args: { data: Record<string, unknown>; include?: Record<string, unknown>; select?: Record<string, unknown> }): Promise<Row>;
+  update(args: {
+    where: Record<string, unknown>;
+    data: Record<string, unknown>;
+    include?: Record<string, unknown>;
+    select?: Record<string, unknown>;
+  }): Promise<Row>;
   delete(args: { where: Record<string, unknown> }): Promise<Row>;
 }
 
